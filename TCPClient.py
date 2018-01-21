@@ -1,7 +1,9 @@
+import platform
 from socket import *
-serverName = 'localhost'
-serverPort = 6789
+
+serverPort = 8001
 clientSocket = socket(AF_INET, SOCK_STREAM)
+serverName = platform.uname()[1]
 clientSocket.connect((serverName,serverPort))
 while True:
 	sentence = input('Input lowercase sentence: ')
