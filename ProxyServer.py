@@ -2,6 +2,12 @@ import socket
 import threading
 import sys
 
+config = { "BLACKLIST_DOMAINS":[],
+			"HOST_NAME":'/',
+			"BIND_PORT": 80,
+			"CONNECTION_TIMEOUT":100
+		}
+
 class myThread(threading.Thread):
     def __init__(self, threadId, connectionSocket, clientAddress):
         threading.Thread.__init__(self)
@@ -13,19 +19,23 @@ class myThread(threading.Thread):
         print('start thread '+str(self.threadId))
         keep_socket(self.connectionSocket, self.clientAddress)
 
-
 def proxy_server(webserver, port, conn, data, addr):
     try:
-        print('start proxy')
+        print('start the proxy server with host ', host, " and port ", port)
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         webserver = webserver.replace("www.", "", 1)
+        s.settimeout(config["CONNECTION_TIMEOUT"])
         s.connect((webserver, port))
         s.send(bytes(data.encode('utf8')))
 
-        while 1:
+        while True:
             reply = s.recv(1024).decode('utf-8') #read reply or data from end web server
             if len(reply) > 0:
-                conn.send(reply.encode('utf-8'))
+            	#check if the host:port is blacklisted
+            	for i in range(0, len(config["BLACKLIST_DOMAINS"])):
+            		if config["BLACKLIST_DOMAINS"][i] in webserver:
+            			conn.close()
+                conn.send(reply.encode('utf-8')) #suppose to send to browser
                 dar = float(len(reply))
                 dar = "%s KB" % ("%.3s" % str(float(dar / 1024)))
                 print("[*] Request Done: %s => %s <= " % (str(addr[0]), str(dar)))
@@ -33,51 +43,53 @@ def proxy_server(webserver, port, conn, data, addr):
                 break
 
         s.close()
-        #conn.close()
-    except:
-        s.close()
         conn.close()
+    except Exception as inst:
+    	if s:
+        	s.close()
+       	if conn:
+        	conn.close()
+        print(type(inst))
         sys.exit(1)
 
 
-def keep_socket(connectionSocket, clientAddress): #every connection keep a socket and received data
+def keep_socket(connectionSocket, clientAddress): 
+	#every connection keep a socket and received data
     #while connectionSocket.connect_ex(clientAddress) == 0:
     h = "Host:"
     while True: 
         data = connectionSocket.recv(1024).decode('utf-8')
         try:
             host = data.split(h)[1] if h in data else ''
-            first_line = data.split('\n')[0]
-            url = first_line.split(' ')[1]
-            http_pos = url.find("://")
+            first_line = data.split('\n')[0] #parse the first line
+            url = first_line.split(' ')[1] 	 #get url
+            http_pos = url.find("://")		 #find pos of ://
             tmp = url[1:] if http_pos == -1 else url[http_pos+3:]
-            port_pos = tmp.find(":")
+            port_pos = tmp.find(":")		 #find port pos if any
 
-            webserver_pos = tmp.find("/")
+            webserver_pos = tmp.find("/")	 #find end of web server
             if webserver_pos == -1:
                 webserver_pos = len(tmp)
+
             webserver = ''
             port = -1
-            if port == -1 or webserver_pos < port_pos:
-                port = 80
-                webserver = tmp[:port_pos]
+            if port_pos == -1 or webserver_pos < port_pos:
+                port = 80					#default port
+                webserver = tmp[:webserver_pos]
             else:
-                port = int((tmp[(port_pos+1):])[:webserver_pos-port_pos-1])
+                port = int((tmp[(port_pos + 1):])[:webserver_pos- port_pos - 1])
+                webserver = tmp[:port_pos]
             
             proxy_server(host + webserver, port, connectionSocket, data, clientAddress)
         except:
             print("schew up in socket part")
-    #else:
-        #print(connectionSocket.connect_ex(clientAddress))
-
-
-
+            pass        
 
 def main():
     serverName = ''
-    serverPort = 8002 #listening port
+    serverPort = 8003 #listening port
     serverSocket = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
-    serverSocket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    serverSocket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)  #re-use the socket
     serverSocket.bind((serverName,serverPort))
     serverSocket.listen(5)
     print('The server is ready to receive')
@@ -87,10 +99,9 @@ def main():
         try:
             connectionSocket, clientAddress = serverSocket.accept()
             t = myThread(count, connectionSocket, clientAddress)
-            #t = threading.Thread(target=create_socket, args=connectionSocket)
+            #t.setDaemon(True)
             t.start()
             count += 1
-            #thread.start_new_thread(create_socket, connectionSocket)
         except:
             print('connection socket doesn\'t work')
             serverSocket.close()
@@ -98,3 +109,5 @@ def main():
 
 if __name__ == '__main__':
     main()
+
+
